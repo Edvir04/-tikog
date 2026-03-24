@@ -250,12 +250,11 @@ class _PredictionPageState extends State<PredictionPage> {
         // Exact fractional leaves per product for this category
         double catPerProductExact = adjustedPerProduct * coverageRatio;
 
-        // Requirement per product rounded UP (as requested to ensure enough material)
-        int perProduct = catPerProductExact.ceil();
-        if (perProduct < 1) perProduct = 1;
+        // Keep exact decimal — no rounding up
+        if (catPerProductExact < 1) catPerProductExact = 1.0;
 
-        // Apply total quantity to the rounded per-product number
-        int totalForCategory = perProduct * totalQuantity;
+        // Compute total using exact decimal value
+        double totalForCategory = catPerProductExact * totalQuantity;
 
         categoryResults.add({
           'label': cat['label'],
@@ -263,7 +262,7 @@ class _PredictionPageState extends State<PredictionPage> {
           'avgLengthM': cat['avgLengthM'],
           'avgWidthIn': cat['avgWidthIn'],
           'coverageIn2': catCoverage,
-          'leavesPerProduct': perProduct,
+          'leavesPerProduct': catPerProductExact,
           'totalLeaves': totalForCategory,
         });
       }
@@ -591,9 +590,9 @@ class _PredictionPageState extends State<PredictionPage> {
             ),
           ),
           const SizedBox(height: 8),
-          // Main prediction number
+          // Main prediction number (total from exact decimal, displayed rounded)
           Text(
-            "${cat['totalLeaves']} tikog leaves required",
+            "${(cat['totalLeaves'] as double).round()} tikog leaves required",
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -601,9 +600,9 @@ class _PredictionPageState extends State<PredictionPage> {
             ),
           ),
           const SizedBox(height: 6),
-          // Supporting details
+          // Supporting details — per-product shown as range if decimal
           Text(
-            "${cat['leavesPerProduct']} leaves/product × ${info['total_quantity']} products",
+            "${_formatLeavesPerProduct(cat['leavesPerProduct'] as double)} leaves/product × ${info['total_quantity']} products",
             style: const TextStyle(fontSize: 12, color: Colors.white70),
           ),
           Text(
@@ -624,5 +623,15 @@ class _PredictionPageState extends State<PredictionPage> {
         style: const TextStyle(fontSize: 14, color: Colors.white70),
       ),
     );
+  }
+
+  /// Formats per-product leaves: shows a range (floor–ceil) if decimal,
+  /// or the whole number if exact.
+  String _formatLeavesPerProduct(double value) {
+    if (value == value.roundToDouble()) {
+      return '${value.round()}';
+    } else {
+      return '${value.floor()}–${value.ceil()}';
+    }
   }
 }
