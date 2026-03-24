@@ -603,7 +603,11 @@ class _PredictionPageState extends State<PredictionPage> {
           // Supporting details — per-product shown as range if decimal
           Text(
             "${_formatLeavesPerProduct(cat['leavesPerProduct'] as double)} leaves/product × ${info['total_quantity']} products",
-            style: const TextStyle(fontSize: 12, color: Colors.white70),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
           ),
           Text(
             "Avg leaf: ${(cat['avgLengthM'] as double).toStringAsFixed(2)} m × ${(cat['avgWidthIn'] as double).toStringAsFixed(3)}\"  •  "
@@ -625,13 +629,9 @@ class _PredictionPageState extends State<PredictionPage> {
     );
   }
 
-  /// Formats per-product leaves: shows a range (floor–ceil) if decimal,
-  /// or the whole number if exact.
+  /// Formats per-product leaves: rounds to nearest whole number
+  /// (0.5+ rounds up, 0.4 and below rounds down).
   String _formatLeavesPerProduct(double value) {
-    if (value == value.roundToDouble()) {
-      return '${value.round()}';
-    } else {
-      return '${value.floor()}–${value.ceil()}';
-    }
+    return '${(value + 0.5).floor()}';
   }
 }
