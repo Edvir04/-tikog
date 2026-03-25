@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "179736911659",
+    "project_id": "tikog-b5f09",
+    "storage_bucket": "tikog-b5f09.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:179736911659:android:c4ea4a5026cf11db1a2f6e",
+        "android_client_info": {
+          "package_name": "com.example.tikog"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCTt4u_rFXldGdBQ7h0_JoZS7mD7VXlYwE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
