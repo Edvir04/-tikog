@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
   runApp(const MyApp());
 }
 
@@ -16,10 +14,10 @@ class MyApp extends StatelessWidget {
       title: 'Tikog Requirement Prediction',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212), // Dark background
+        scaffoldBackgroundColor: const Color(0xFF121212),
         colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF2E7D32), // Green highlight for prediction
-          surface: Color(0xFF1E1E1E), // Slightly lighter for cards/inputs
+          primary: Color(0xFF2E7D32),
+          surface: Color(0xFF1E1E1E),
         ),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF1E1E1E),
@@ -51,8 +49,8 @@ class _PredictionPageState extends State<PredictionPage> {
   final Map<String, List<double>> dimensionOptions = {
     "27 inches x 16 inches": [27.0, 16.0],
     "11 inches x 14 ½ inches": [11.0, 14.5],
-    "12 inches x 7 ½ inches x 3 ½ inches": [12.0, 7.5],
-    "Body = 17 ½ x 2, packet (11 ½ x 11 ½), side (5 x 6)": [17.5, 2.0],
+    "12 inches x 7 ½ inches x 3 ½ inches": [12.0, 7.5, 3.5],
+    "Body = 17 ½ x 2, packet (11 ½ x 11 ½), side (5 x 6)": [17.5, 2.0, 11.5, 11.5, 5.0, 6.0],
     "29 inches x 22 inches": [29.0, 22.0],
     "Custom": [0.0, 0.0]
   };
@@ -61,20 +59,17 @@ class _PredictionPageState extends State<PredictionPage> {
     "Mat", "Bag", "Slippers", "Wallet", "Others"
   ];
 
-  final List<String> salesTrends = [
-    "Increasing", "Stable", "Decreasing"
-  ];
-
   String selectedDimension = "27 inches x 16 inches";
   double length = 27.0;
   double width = 16.0;
 
   final TextEditingController quantityController = TextEditingController(text: "0");
-  final TextEditingController customLengthController = TextEditingController();
-  final TextEditingController customWidthController = TextEditingController();
+  final TextEditingController customDim1Controller = TextEditingController();
+  final TextEditingController customDim2Controller = TextEditingController();
+  final TextEditingController customDim3Controller = TextEditingController();
+  final TextEditingController customProductTypeController = TextEditingController();
 
   String selectedProductType = "Mat";
-  String selectedSalesTrend = "Increasing";
 
   bool isLoading = false;
   Map<String, dynamic>? predictionResult;
@@ -83,8 +78,10 @@ class _PredictionPageState extends State<PredictionPage> {
   @override
   void dispose() {
     quantityController.dispose();
-    customLengthController.dispose();
-    customWidthController.dispose();
+    customDim1Controller.dispose();
+    customDim2Controller.dispose();
+    customDim3Controller.dispose();
+    customProductTypeController.dispose();
     super.dispose();
   }
 
@@ -93,29 +90,37 @@ class _PredictionPageState extends State<PredictionPage> {
       setState(() {
         selectedDimension = value;
         if (value != "Custom") {
-          length = dimensionOptions[value]![0];
-          width = dimensionOptions[value]![1];
-        } else {
-          length = double.tryParse(customLengthController.text) ?? 0.0;
-          width = double.tryParse(customWidthController.text) ?? 0.0;
+          final dims = dimensionOptions[value]!;
+          length = dims[0];
+          width = dims.length > 1 ? dims[1] : 0.0;
         }
       });
     }
   }
 
   // ============================================================
-  // TIKOG LEAF REFERENCE CONSTANTS
+  // TIKOG STEM REFERENCE CONSTANTS
   // ============================================================
-  // Minimum harvestable length: 1.0 meter
-  // Leaf length range: 1.0 to 3.0 meters
-  // Leaf width range: 1/8 inch (0.125") to 1/4 inch (0.25")
-  static const double minHarvestableLengthM = 1.0;
-  static const double maxLeafLengthM = 3.0;
-  static const double minLeafWidthIn = 0.125; // 1/8 inch
-  static const double maxLeafWidthIn = 0.25;  // 1/4 inch
   static const double metersToInches = 39.3701;
 
-  // Leaf size categories — only leaves >= 1.0m are harvestable
+  // Efficiency factor to account for real-world weaving conditions:
+  //   - stem joining/overlapping when a stem is too short to span
+  //     a product dimension
+  //   - edge finishing
+  // Note: There is NO trimming of width — stems are used at their
+  // full natural flattened width. Flattening does not significantly
+  // change the stem width.
+  // A value of 1.10 means 10% extra stems are added.
+  // Adjust this value as needed based on actual weaving experience.
+  static const double efficiencyFactor = 1.10;
+
+  // NOTE ON STEM WIDTHS:
+  // The avgWidthIn values below (e.g., 0.156 inches) are very narrow.
+  // This is intentional — tikog stems are naturally thin when dried
+  // and flattened. Because the width is so small, the stem count
+  // will be high. These values are based on measured averages of
+  // flattened stems and should NOT be changed unless new field
+  // measurements are taken.
   static const List<Map<String, dynamic>> leafCategories = [
     {
       'label': 'Category 1',
@@ -123,7 +128,7 @@ class _PredictionPageState extends State<PredictionPage> {
       'minLengthM': 1.0,
       'maxLengthM': 1.75,
       'avgLengthM': 1.375,
-      'avgWidthIn': 0.156, // narrower leaves typical at this size
+      'avgWidthIn': 0.156, // ~4 mm — natural flattened width
     },
     {
       'label': 'Category 2',
@@ -131,7 +136,7 @@ class _PredictionPageState extends State<PredictionPage> {
       'minLengthM': 1.75,
       'maxLengthM': 2.5,
       'avgLengthM': 2.125,
-      'avgWidthIn': 0.188, // mid-range width
+      'avgWidthIn': 0.188, // ~4.8 mm
     },
     {
       'label': 'Category 3',
@@ -139,9 +144,35 @@ class _PredictionPageState extends State<PredictionPage> {
       'minLengthM': 2.5,
       'maxLengthM': 3.0,
       'avgLengthM': 2.75,
-      'avgWidthIn': 0.219, // wider leaves at longer sizes
+      'avgWidthIn': 0.219, // ~5.6 mm
     },
   ];
+
+  /// Computes the product measurement for a Custom dimension.
+  /// Accepts up to 3 dimension values; ignores any that are 0.
+  /// - 1 dimension (1D): just Length (e.g., rope, strip)
+  /// - 2 dimensions (2D): Length × Width (e.g., mat, fabric)
+  /// - 3 dimensions (3D): Surface Area minus one open side
+  ///   Formula: L×W + 2×L×H + 2×W×H  (5 faces, open top)
+  ///   In real-world use, 3D products (baskets, boxes) always have
+  ///   one open side (e.g., the top), so we exclude it.
+  double _computeCustomArea(List<double> dims) {
+    switch (dims.length) {
+      case 1:
+        return dims[0]; // 1D: just length (linear)
+      case 2:
+        return dims[0] * dims[1]; // 2D: flat area
+      case 3:
+        // 3D: 5-FACE SURFACE AREA (open top excluded)
+        // Full box = 2×(L×W + L×H + W×H) = 6 faces
+        // Minus open top (L×W) = 5 faces
+        // = L×W + 2×L×H + 2×W×H
+        double l = dims[0], w = dims[1], h = dims[2];
+        return (l * w) + 2 * (l * h) + 2 * (w * h);
+      default:
+        return 0.0;
+    }
+  }
 
   Future<void> makePrediction() async {
     setState(() {
@@ -151,113 +182,91 @@ class _PredictionPageState extends State<PredictionPage> {
     });
 
     try {
+      double productArea;
+
       if (selectedDimension == "Custom") {
-        length = double.tryParse(customLengthController.text) ?? 0.0;
-        width = double.tryParse(customWidthController.text) ?? 0.0;
+        // Gather all 3 dimension fields, filter out zeros
+        List<double> customDims = [
+          double.tryParse(customDim1Controller.text) ?? 0.0,
+          double.tryParse(customDim2Controller.text) ?? 0.0,
+          double.tryParse(customDim3Controller.text) ?? 0.0,
+        ].where((d) => d > 0).toList();
+
+        if (customDims.isEmpty) {
+          throw Exception("Please enter at least one dimension greater than 0.");
+        }
+
+        productArea = _computeCustomArea(customDims);
+      } else {
+        // Preset dimensions
+        productArea = length * width;
+
+        // Special case overrides for complex presets
+        if (selectedDimension == "Body = 17 ½ x 2, packet (11 ½ x 11 ½), side (5 x 6)") {
+          double bodyArea = 17.5 * 2.0;
+          double packetArea = 11.5 * 11.5;
+          double sideArea = 5.0 * 6.0;
+          productArea = bodyArea + packetArea + sideArea;
+        } else if (selectedDimension == "12 inches x 7 ½ inches x 3 ½ inches") {
+          double baseArea = 12.0 * 7.5;
+          double longWallsArea = 2 * (12.0 * 3.5);
+          double shortWallsArea = 2 * (7.5 * 3.5);
+          productArea = baseArea + longWallsArea + shortWallsArea;
+        }
       }
 
-      final String quantityText = quantityController.text;
-      final List<int> quantities = quantityText
-          .split(',')
-          .map((e) => int.tryParse(e.trim()) ?? 0)
-          .toList();
-
-      if (quantities.isEmpty || quantities.any((q) => q <= 0)) {
-        throw Exception("Please enter valid quantities separated by commas.");
-      }
-      if (length <= 0 || width <= 0) {
-        throw Exception("Length and Width must be greater than 0.");
+      // Parse single quantity
+      final int quantity = int.tryParse(quantityController.text.trim()) ?? 0;
+      if (quantity <= 0) {
+        throw Exception("Please enter a valid quantity greater than 0.");
       }
 
       // ==========================================================
-      // 1. PRODUCT SIDES
+      // PRODUCT SIDES
       // ==========================================================
+      String displayProductType = selectedProductType;
       Map<String, int> productSides = {
         "Mat": 1, "Bag": 2, "Slippers": 2, "Wallet": 2, "Others": 1
       };
       int sides = productSides[selectedProductType] ?? 1;
 
-      // ==========================================================
-      // 2. DETERMINISTIC PREDICTION LOGIC (from APP1.py)
-      // ==========================================================
-      double productArea = length * width; // in²
-
-      // Special case for complex dimension string
-      if (selectedDimension == "Body = 17 ½ x 2, packet (11 ½ x 11 ½), side (5 x 6)") {
-        double bodyArea = 17.5 * 2.0;      // 35.0
-        double packetArea = 11.5 * 11.5;   // 132.25
-        double sideArea = 5.0 * 6.0;       // 30.0
-        productArea = bodyArea + packetArea + sideArea; // 197.25
-      } else if (selectedDimension == "12 inches x 7 ½ inches x 3 ½ inches") {
-        // Surface area for an open 3D rectangular box (Base + 4 Walls)
-        // Length = 12.0, Width = 7.5, Height/Depth = 3.5
-        double baseArea = 12.0 * 7.5;              // 90.0
-        double longWallsArea = 2 * (12.0 * 3.5);   // 84.0
-        double shortWallsArea = 2 * (7.5 * 3.5);   // 52.5
-        productArea = baseArea + longWallsArea + shortWallsArea; // 226.5
-      }
-
-      double baseTikogPerSide = productArea / 2.0;
-
-      // Apply product sides
-      double tikogPerProduct = baseTikogPerSide * sides;
-
-      // ==========================================================
-      // 3. SALES TREND ADJUSTMENT (deterministic)
-      // ==========================================================
-      double trendMultiplier;
-      switch (selectedSalesTrend) {
-        case "Increasing":
-          trendMultiplier = 1.15;
-          break;
-        case "Decreasing":
-          trendMultiplier = 0.85;
-          break;
-        default:
-          trendMultiplier = 1.00;
-      }
-
-      double adjustedPerProduct = tikogPerProduct * trendMultiplier;
-
-      // ==========================================================
-      // 4. APPLY QUANTITY
-      // ==========================================================
-      int totalQuantity = quantities.fold(0, (sum, item) => sum + item);
-      if (totalQuantity <= 0) {
-        throw Exception("Total quantity must be greater than 0");
+      // If "Others", use the custom product type name for display
+      if (selectedProductType == "Others") {
+        String customName = customProductTypeController.text.trim();
+        if (customName.isNotEmpty) {
+          displayProductType = customName;
+        } else {
+          displayProductType = "Others";
+        }
       }
 
       // ==========================================================
-      // 5. PER-CATEGORY PREDICTION
+      // DETERMINISTIC PREDICTION LOGIC
       // ==========================================================
-      // Each category adjusts the count based on leaf coverage area.
-      // Shorter/narrower leaves → more leaves needed to cover same area.
-      // Longer/wider leaves → fewer leaves needed.
-      //
-      // We compute a coverage ratio: how much area does the average leaf
-      // in each category cover, relative to the overall average leaf.
-      double avgLeafLengthIn = ((minHarvestableLengthM + maxLeafLengthM) / 2.0) * metersToInches;
-      double avgLeafWidthIn = (minLeafWidthIn + maxLeafWidthIn) / 2.0;
-      double avgLeafCoverage = avgLeafLengthIn * avgLeafWidthIn; // in²
+      // For each stem category, compute:
+      //   rawStems = (product area × number of sides) / stem coverage area
+      //   adjustedStems = rawStems × efficiencyFactor
+      // where:
+      //   stem coverage area = avg stem length (in) × avg stem width (in)
+      //   efficiencyFactor accounts for stem joining/overlap and edge finishing
+      // ==========================================================
+      double totalProductArea = productArea * sides;
 
       List<Map<String, dynamic>> categoryResults = [];
 
       for (var cat in leafCategories) {
         double catAvgLengthIn = (cat['avgLengthM'] as double) * metersToInches;
         double catAvgWidthIn = cat['avgWidthIn'] as double;
-        double catCoverage = catAvgLengthIn * catAvgWidthIn; // in² per leaf
+        double catCoverage = catAvgLengthIn * catAvgWidthIn; // in² per stem
 
-        // Ratio: smaller leaves have coverage < average → ratio > 1 → more leaves
-        double coverageRatio = avgLeafCoverage / (catCoverage > 0 ? catCoverage : 1.0);
+        // Raw stem count based on pure area division
+        double rawPerProduct = totalProductArea / (catCoverage > 0 ? catCoverage : 1.0);
+        if (rawPerProduct < 1) rawPerProduct = 1.0;
 
-        // Exact fractional leaves per product for this category
-        double catPerProductExact = adjustedPerProduct * coverageRatio;
+        // Apply efficiency factor for stem joining/overlap and edge finishing
+        double catPerProductExact = rawPerProduct * efficiencyFactor;
 
-        // Keep exact decimal — no rounding up
-        if (catPerProductExact < 1) catPerProductExact = 1.0;
-
-        // Compute total using exact decimal value
-        double totalForCategory = catPerProductExact * totalQuantity;
+        double totalForCategory = catPerProductExact * quantity;
 
         categoryResults.add({
           'label': cat['label'],
@@ -270,7 +279,6 @@ class _PredictionPageState extends State<PredictionPage> {
         });
       }
 
-      // Brief UI delay for feedback
       await Future.delayed(const Duration(milliseconds: 400));
 
       setState(() {
@@ -279,15 +287,11 @@ class _PredictionPageState extends State<PredictionPage> {
           "info": {
             "product_area": productArea,
             "number_of_sides": sides,
-            "trend_multiplier": trendMultiplier,
-            "total_quantity": totalQuantity,
+            "total_quantity": quantity,
           },
           "details": {
             "dimension": selectedDimension,
-            "length": length,
-            "width": width,
-            "product_type": selectedProductType,
-            "sales_trend": selectedSalesTrend,
+            "product_type": displayProductType,
           },
         };
       });
@@ -321,8 +325,8 @@ class _PredictionPageState extends State<PredictionPage> {
               style: TextStyle(fontSize: 16, color: Colors.white70),
             ),
             const SizedBox(height: 24),
-            
-            // Dimension Dropdown
+
+            // ── Dimension Dropdown ──
             _buildLabel("Dimension"),
             const SizedBox(height: 8),
             Container(
@@ -347,60 +351,93 @@ class _PredictionPageState extends State<PredictionPage> {
             ),
             const SizedBox(height: 16),
 
-            // Length and Width Fields
+            // ── Custom Dimensions (up to 3 fields) ──
             if (selectedDimension == "Custom")
-              Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildLabel("Length (inches)"),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: customLengthController,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        ),
-                      ],
-                    ),
+                  const Text(
+                    "Fill in only the fields you need. Leave the rest empty or 0.",
+                    style: TextStyle(fontSize: 12, color: Colors.white54, fontStyle: FontStyle.italic),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildLabel("Width (inches)"),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: customWidthController,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildLabel("Length (inches)"),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: customDim1Controller,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildLabel("Width (inches)"),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: customDim2Controller,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildLabel("Height (inches)"),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: customDim3Controller,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  // Hint about how dimensions are interpreted
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2A2A35),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      "💡 How it works:\n"
+                      "• Length only — for straight items like strips or rope\n"
+                      "• Length + Width — for flat items like mats or fabric\n"
+                      "• Length + Width + Height — for 3D items like boxes or baskets",
+                      style: TextStyle(fontSize: 11, color: Colors.white54, height: 1.6),
                     ),
                   ),
                 ],
               )
             else
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("Length: $length inches", style: const TextStyle(fontSize: 14)),
-                  const SizedBox(height: 4),
-                  Text("Width: $width inches", style: const TextStyle(fontSize: 14)),
-                ],
-              ),
+              _buildPresetDimensionDisplay(),
             const SizedBox(height: 24),
 
-            // Quantity
-            _buildLabel("Quantity (Enter multiple quantities separated by commas)"),
+            // ── Quantity (single value only) ──
+            _buildLabel("Quantity"),
             const SizedBox(height: 8),
             TextField(
               controller: quantityController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 24),
 
-            // Product Type
+            // ── Product Type ──
             _buildLabel("Product Type"),
             const SizedBox(height: 8),
             Container(
@@ -425,42 +462,29 @@ class _PredictionPageState extends State<PredictionPage> {
                 ),
               ),
             ),
-            const SizedBox(height: 24),
 
-            // Sales Trend
-            _buildLabel("Sales Trend"),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).inputDecorationTheme.fillColor,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  isExpanded: true,
-                  value: selectedSalesTrend,
-                  items: salesTrends.map((String trend) {
-                    return DropdownMenuItem<String>(
-                      value: trend,
-                      child: Text(trend),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => selectedSalesTrend = val);
-                  },
+            // ── Custom product type text field when "Others" is selected ──
+            if (selectedProductType == "Others") ...[
+              const SizedBox(height: 12),
+              _buildLabel("Specify Product Type"),
+              const SizedBox(height: 8),
+              TextField(
+                controller: customProductTypeController,
+                decoration: const InputDecoration(
+                  hintText: "e.g. Placemat, Coaster, Fan...",
+                  hintStyle: TextStyle(color: Colors.white30),
                 ),
               ),
-            ),
+            ],
             const SizedBox(height: 32),
 
-            // Predict Button
+            // ── Predict Button ──
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: isLoading ? null : makePrediction,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary, // Green
+                  backgroundColor: Theme.of(context).colorScheme.primary,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
@@ -484,7 +508,7 @@ class _PredictionPageState extends State<PredictionPage> {
             ),
             const SizedBox(height: 24),
 
-            // Error Message
+            // ── Error Message ──
             if (errorMessage != null)
               Container(
                 padding: const EdgeInsets.all(16),
@@ -500,7 +524,7 @@ class _PredictionPageState extends State<PredictionPage> {
                 ),
               ),
 
-            // Results Section
+            // ── Results Section ──
             if (predictionResult != null) _buildResultSection(),
           ],
         ),
@@ -519,6 +543,72 @@ class _PredictionPageState extends State<PredictionPage> {
     );
   }
 
+  /// Builds contextual dimension display for preset (non-Custom) selections.
+  Widget _buildPresetDimensionDisplay() {
+    if (selectedDimension == "12 inches x 7 ½ inches x 3 ½ inches") {
+      // 3D preset: show Length, Width, Height
+      final dims = dimensionOptions[selectedDimension]!;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Length: ${dims[0]} inches", style: const TextStyle(fontSize: 14)),
+          const SizedBox(height: 4),
+          Text("Width: ${dims[1]} inches", style: const TextStyle(fontSize: 14)),
+          const SizedBox(height: 4),
+          Text("Height: ${dims[2]} inches", style: const TextStyle(fontSize: 14)),
+          const SizedBox(height: 6),
+          const Text(
+            "⬡ Uses 5-face surface area (open top excluded)",
+            style: TextStyle(fontSize: 11, color: Colors.white54, fontStyle: FontStyle.italic),
+          ),
+        ],
+      );
+    } else if (selectedDimension == "Body = 17 ½ x 2, packet (11 ½ x 11 ½), side (5 x 6)") {
+      // Composite preset: show each panel
+      final dims = dimensionOptions[selectedDimension]!;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Body: ${dims[0]} × ${dims[1]} inches", style: const TextStyle(fontSize: 14)),
+          const SizedBox(height: 4),
+          Text("Packet: ${dims[2]} × ${dims[3]} inches", style: const TextStyle(fontSize: 14)),
+          const SizedBox(height: 4),
+          Text("Side: ${dims[4]} × ${dims[5]} inches", style: const TextStyle(fontSize: 14)),
+          const SizedBox(height: 6),
+          const Text(
+            "⬡ Total area = sum of all panels",
+            style: TextStyle(fontSize: 11, color: Colors.white54, fontStyle: FontStyle.italic),
+          ),
+        ],
+      );
+    } else {
+      // Standard 2D preset: show Length and Width
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Length: $length inches", style: const TextStyle(fontSize: 14)),
+          const SizedBox(height: 4),
+          Text("Width: $width inches", style: const TextStyle(fontSize: 14)),
+        ],
+      );
+    }
+  }
+
+  /// Returns a contextual product area label for the results section.
+  String _getProductAreaLabel() {
+    if (predictionResult == null) return "";
+    final area = (predictionResult!['info']['product_area'] as double).toStringAsFixed(2);
+    final dimension = predictionResult!['details']['dimension'] as String;
+
+    if (dimension == "12 inches x 7 ½ inches x 3 ½ inches") {
+      return "Surface Area (5 faces): $area in²";
+    } else if (dimension == "Body = 17 ½ x 2, packet (11 ½ x 11 ½), side (5 x 6)") {
+      return "Total Panel Area: $area in²";
+    } else {
+      return "Product Area: $area in²";
+    }
+  }
+
   Widget _buildResultSection() {
     final categories = predictionResult!['categories'] as List<Map<String, dynamic>>;
     final info = predictionResult!['info'] as Map<String, dynamic>;
@@ -527,7 +617,6 @@ class _PredictionPageState extends State<PredictionPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Title ──
         const Text(
           "Prediction Results by Leaf Size",
           style: TextStyle(
@@ -543,17 +632,14 @@ class _PredictionPageState extends State<PredictionPage> {
         ),
         const SizedBox(height: 16),
 
-        // ── Three Category Prediction Cards ──
         ...categories.map((cat) => _buildPredictionCard(cat, info)),
         const SizedBox(height: 20),
 
-        // ── Product Details ──
         _buildSectionHeader("Product Details"),
         const SizedBox(height: 10),
         _buildResultText("Dimension: ${details['dimension']}"),
-        _buildResultText("Length: ${details['length']} inches  •  Width: ${details['width']} inches"),
+        _buildResultText(_getProductAreaLabel()),
         _buildResultText("Product Type: ${details['product_type']}"),
-        _buildResultText("Sales Trend: ${details['sales_trend']}"),
         _buildResultText("Total Quantity: ${info['total_quantity']}"),
       ],
     );
@@ -583,7 +669,6 @@ class _PredictionPageState extends State<PredictionPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Category header
           Text(
             "${cat['label']}:  ${cat['subtitle']}",
             style: const TextStyle(
@@ -593,9 +678,8 @@ class _PredictionPageState extends State<PredictionPage> {
             ),
           ),
           const SizedBox(height: 8),
-          // Main prediction number (total from exact decimal, displayed rounded)
           Text(
-            "${(cat['totalLeaves'] as double).round()} tikog leaves required",
+            "${_roundLeaves(cat['totalLeaves'] as double)} tikog leaves required",
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -603,7 +687,6 @@ class _PredictionPageState extends State<PredictionPage> {
             ),
           ),
           const SizedBox(height: 6),
-          // Supporting details — per-product shown as range if decimal
           Text(
             "${_formatLeavesPerProduct(cat['leavesPerProduct'] as double)} leaves/product × ${info['total_quantity']} products",
             style: const TextStyle(
@@ -632,9 +715,22 @@ class _PredictionPageState extends State<PredictionPage> {
     );
   }
 
-  /// Formats per-product leaves: rounds to nearest whole number
-  /// (0.5+ rounds up, 0.4 and below rounds down).
+  // ============================================================
+  // ROUNDING HELPER
+  // ============================================================
+  // Rounding rule:
+  //   - If decimal part >= 0.5 → round UP to next whole number
+  //   - If decimal part <= 0.4 → round DOWN (floor)
+  // Dart's .round() implements this standard behavior.
+  // ============================================================
+
+  /// Applies the standard rounding rule to a leaf count.
+  int _roundLeaves(double value) {
+    return value.round();
+  }
+
+  /// Formats per-product leaves for display using standard rounding.
   String _formatLeavesPerProduct(double value) {
-    return '${(value + 0.5).floor()}';
+    return '${_roundLeaves(value)}';
   }
 }
